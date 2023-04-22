@@ -1,0 +1,15 @@
+# created by virtualenv automatically
+.env
+.env.prod
+
+#virtualenv
+bin
+lib
+
+#volume
+app
+data
+uwsgi_data
+
+#inside django-onlineshop
+.vscode

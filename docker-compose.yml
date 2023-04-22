@@ -1,0 +1,115 @@
+version: '3.8'
+
+services:
+  web:
+    container_name: onlineshop_dev
+    build:
+      context: ./django-onlineshop
+      dockerfile: ./docker/django/Dockerfile
+    command: uwsgi --ini "/usr/src/app/config/uwsgi/uwsgi.ini"
+    env_file:
+      - ./.env
+    volumes:
+      - ./django-onlineshop:/usr/src/app
+      - uwsgi_onlineshop:/tmp/
+      - shop_static_volumn:/usr/src/app/static
+      - shop_media_volumn:/usr/src/app/media
+    ports:
+      - 8088:8000
+    depends_on:
+      - db
+      - redis
+    networks:
+      - onlineshop-django
+  db:
+    container_name: onlineshop_dbdev
+    image: postgres:13.0-alpine
+    volumes:
+      - postgres_shop:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_USER=${SQL_USER}
+      - POSTGRES_PASSWORD=${SQL_PASSWORD}
+      - POSTGRES_DB=${SQL_DATABASE}
+    networks:
+      - onlineshop-django
+
+  rabbitmq:
+    container_name: onlineshop_rabbit
+    image: rabbitmq:management
+    env_file:
+      - ./.env
+    depends_on:
+      - web
+    ports:
+      - 5672:5672
+      - 15672:15672
+    networks:
+      - onlineshop-django
+
+  celery_worker:
+    build:
+      context: ./django-onlineshop
+      dockerfile: ./docker/django/Dockerfile
+    container_name: onlineshop_celery
+    restart: always
+    command: celery -A onlineshop worker -l info
+    env_file:
+      - ./.env
+    volumes:
+      - ./django-onlineshop:/usr/src/app/
+    depends_on:
+      - web
+      - redis
+      - rabbitmq
+      - db
+    networks:
+      - onlineshop-django
+
+
+  nginx:
+    restart: always
+    container_name: onlineshop_nginx
+    depends_on:
+      - web
+    build: 
+      context: ./django-onlineshop
+      dockerfile: ./docker/nginx/Dockerfile
+    volumes:
+      - ./django-onlineshop:/usr/src/app
+      - uwsgi_onlineshop:/tmp/
+      - shop_static_volumn:/usr/src/app/static
+      - shop_media_volumn:/usr/src/app/media
+    ports:
+      - "8082:80"
+    networks:
+      - onlineshop-django
+      - nginxproxyman
+
+  redis:
+    container_name: onlineshop_redis
+    restart: unless-stopped
+    image: redis:7.0.5-alpine
+    volumes:
+      - ./data/cache:/data
+    ports:
+      - 6379:6379
+    networks:
+      - onlineshop-django
+
+  stripe-cli:
+      image: stripe/stripe-cli
+      container_name: stripe-cli
+      command: "listen --api-key ${STRIPE_API_KEY} --forward-to web:8000/payment/webhook/ --skip-verify"
+      networks:
+        - onlineshop-django
+
+networks:
+  onlineshop-django:
+  nginxproxyman:
+    external: true
+
+volumes:
+  postgres_shop:
+  uwsgi_onlineshop:
+  shop_static_volumn:
+  shop_media_volumn:
